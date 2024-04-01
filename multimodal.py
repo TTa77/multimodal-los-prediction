@@ -102,8 +102,8 @@ class MultimodalNetwork(nn.Module):
 
         return weighted_sum
 
-    def forward(self, packed_dynamic_X, notes_X_batch, notes_intervals_batch):
-        _, (ht, _) = self.time_series_model(packed_dynamic_X)
+    def forward(self, packed_dynamic_X_batch, notes_X_batch, notes_intervals_batch):
+        _, (ht, _) = self.time_series_model(packed_dynamic_X_batch)
         ht = ht[-1]
 
         embeddings = []
@@ -120,10 +120,10 @@ class MultimodalNetwork(nn.Module):
         return y_pred
     
 def collation(batch):
-    dynamic_X, patient_timesteps, notes_X_batch, notes_intervals_batch, los_batch = zip(*batch)
-    padded_dynamic = pad_sequence(dynamic_X, batch_first=True, padding_value=0.0)
-    packed_dynamic_X = pack_padded_sequence(input=padded_dynamic, lengths=patient_timesteps, batch_first=True, enforce_sorted=False)
+    dynamic_X_batch, patient_timesteps, notes_X_batch, notes_intervals_batch, los_batch = zip(*batch)
+    padded_dynamic_batch = pad_sequence(dynamic_X_batch, batch_first=True, padding_value=0.0)
+    packed_dynamic_X_batch = pack_padded_sequence(input=padded_dynamic_batch, lengths=patient_timesteps, batch_first=True, enforce_sorted=False)
 
     los_batch= torch.tensor(los_batch, dtype=torch.float32)
 
-    return packed_dynamic_X, notes_X_batch, notes_intervals_batch, los_batch
+    return packed_dynamic_X_batch, notes_X_batch, notes_intervals_batch, los_batch
