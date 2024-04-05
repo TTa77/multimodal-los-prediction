@@ -82,12 +82,17 @@ class MultimodalNetwork(nn.Module):
     time_series_model: expects an input of packed padded sequences
     text_model: expects an input of dict with keys {'input_ids', 'token_type_ids', 'attention_mask'} of tokenized sequences
     '''
-    def __init__(self, input_size, out_features, hidden_size, decay_factor=0.9, batch_first=True, **kwargs):
+    def __init__(
+            self, input_size, out_features, 
+            hidden_size, text_model=None, 
+            decay_factor=0.9, batch_first=True, **kwargs
+            ):
+        
         super(MultimodalNetwork, self).__init__(**kwargs)
         self.decay_factor = decay_factor
         
         self.time_series_model = LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=batch_first)
-        self.text_model = AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+        self.text_model = text_model if text_model is not None else AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
 
         self.fc = nn.Sequential(
             nn.LayerNorm(normalized_shape=hidden_size + 768),
