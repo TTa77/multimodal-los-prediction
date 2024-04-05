@@ -54,7 +54,7 @@ class MultimodalDataset(Dataset):
         self.dynamic = dynamic
         self.id_lengths = id_lengths
         self.notes = notes
-        self.tokenizer = AutoTokenizer.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+        self.tokenizer = AutoTokenizer.from_pretrained('emilyalsentzer/Bio_ClinicalBERT')
 
     def __len__(self):
         return len(self.static)
@@ -87,7 +87,7 @@ class MultimodalNetwork(nn.Module):
         self.decay_factor = decay_factor
         
         self.time_series_model = LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=batch_first)
-        self.text_model = AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
+        self.text_model = AutoModel.from_pretrained('emilyalsentzer/Bio_ClinicalBERT')
 
         self.fc = nn.Sequential(
             nn.LayerNorm(normalized_shape=hidden_size + 768),
