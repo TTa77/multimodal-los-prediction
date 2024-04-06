@@ -77,7 +77,7 @@ class MultimodalDataset(Dataset):
         los = [self.static_dict.get(patient_id, [])]
         return dynamic_X, patient_timesteps, notes_X, notes_intervals, los
     
-class MultimodalNetwork(nn.Module):
+class LOSNetWeighted(nn.Module):
     '''
     time_series_model: expects an input of packed padded sequences
     text_model: expects an input of dict with keys {'input_ids', 'token_type_ids', 'attention_mask'} of tokenized sequences
@@ -85,10 +85,10 @@ class MultimodalNetwork(nn.Module):
     def __init__(
             self, input_size, out_features, 
             hidden_size, text_model=None, 
-            decay_factor=0.9, batch_first=True, **kwargs
+            decay_factor=0.1, batch_first=True, **kwargs
             ):
         
-        super(MultimodalNetwork, self).__init__(**kwargs)
+        super(LOSNetWeighted, self).__init__(**kwargs)
         self.decay_factor = decay_factor
         
         self.time_series_model = LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=batch_first)
@@ -97,12 +97,12 @@ class MultimodalNetwork(nn.Module):
         self.fc = nn.Sequential(
             nn.LayerNorm(normalized_shape=hidden_size + 768),
             nn.Linear(in_features=hidden_size + 768, out_features=out_features, bias=True),
-            nn.Softplus()
+            nn.ReLU()
         )
 
     def weighted_sum(self, embeddings, interval, decay_factor):
         device = embeddings.device
-        weights = (decay_factor ** interval).to(device)
+        weights = ((1 - decay_factor) ** interval).to(device)
         weighted_sum = torch.matmul(weights, embeddings)
 
         return weighted_sum
