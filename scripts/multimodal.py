@@ -7,8 +7,10 @@ from transformers import AutoTokenizer, AutoModel
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import OneHotEncoder
+import torch.nn.functional as F
 
-class MultimodalDataset(Dataset):
+class MultimodalRegressorDataset(Dataset):
     '''
     Parameters
     ----------
@@ -77,6 +79,40 @@ class MultimodalDataset(Dataset):
         los = [self.static_dict.get(patient_id, [])]
         return dynamic_X, patient_timesteps, notes_X, notes_intervals, los
     
+class MultimodalClassifierDataset(MultimodalRegressorDataset):
+    def __init__(self, static, dynamic, id_lengths, notes):
+        super(MultimodalClassifierDataset, self).__init__(
+            static, dynamic, id_lengths, notes
+        )
+
+        ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+        encoded = ohe.fit_transform(static[['los_icu_binned']])
+        ohe_cols = ohe.get_feature_names_out(['los_icu_binned'])
+        ohe_los = pd.DataFrame(encoded, columns=ohe_cols)
+        self.static = pd.concat([static, ohe_los], axis=1)
+        self.static_dict = {idx: row[ohe_cols].astype(np.float32).to_list() for idx, row in self.static.set_index('id').iterrows()}
+
+    def __len__(self):
+        return len(self.static)
+    
+    def __getitem__(self, idx):
+        patient_id = self.static.iloc[idx]['id']
+
+        # time series
+        dynamic_X = self.dynamic[patient_id]
+        dynamic_X = torch.tensor(dynamic_X, dtype=torch.float32)
+        patient_timesteps = self.id_lengths[patient_id]
+
+        # notes
+        notes = self.notes[self.notes['id'] == patient_id]['text'].tolist()
+        notes_intervals = self.notes[self.notes['id'] == patient_id]['interval'].to_numpy()
+        notes_intervals = torch.tensor(notes_intervals, dtype=torch.float32)
+        notes_X = self.tokenizer(notes, return_tensors='pt', truncation=True, max_length=512, padding='max_length')
+
+        # los
+        los = self.static_dict.get(patient_id, [])
+        return dynamic_X, patient_timesteps, notes_X, notes_intervals, los
+    
 class LOSNetWeighted(nn.Module):
     '''
     time_series_model: expects an input of packed padded sequences
@@ -85,11 +121,15 @@ class LOSNetWeighted(nn.Module):
     def __init__(
             self, input_size, out_features, 
             hidden_size, text_model=None, 
-            decay_factor=0.1, batch_first=True, **kwargs
+            decay_factor=0.1, batch_first=True, 
+            task='reg', **kwargs
             ):
+        
+        assert (task == 'reg' or task == 'cls'), 'task must be either `reg` or `cls`'
         
         super(LOSNetWeighted, self).__init__(**kwargs)
         self.decay_factor = decay_factor
+        self.task = task
         
         self.time_series_model = LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=batch_first)
         self.text_model = text_model if text_model is not None else AutoModel.from_pretrained("emilyalsentzer/Bio_ClinicalBERT")
@@ -120,10 +160,11 @@ class LOSNetWeighted(nn.Module):
         zt = torch.stack(embeddings)
         combined_representation = torch.cat((ht, zt), dim=1)
         
-        y_pred = self.fc(combined_representation)
+        logits = self.fc(combined_representation)
+        y_pred = logits if self.task == 'reg' else F.softmax(logits, dim=-1)
 
         return y_pred
-    
+
 def collation(batch):
     dynamic_X_batch, patient_timesteps, notes_X_batch, notes_intervals_batch, los_batch = zip(*batch)
     padded_dynamic_batch = pad_sequence(dynamic_X_batch, batch_first=True, padding_value=0.0)
